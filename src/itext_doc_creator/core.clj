@@ -3,19 +3,24 @@
             [mount.core :as mount]
             [org.httpkit.server :as httpkit]
             [reitit.ring :as ring]
+            [ring.middleware.multipart-params :refer [wrap-multipart-params]]
             [ring.util.io :as ring-io])
   (:gen-class))
 
 (defn handler
   []
-  (ring/ring-handler
-   (ring/router
-    [["/health" (fn [_req] {:status 200})]
-     ["/html2pdf" (fn [req]
-                    (if-let [html (some-> req :body slurp)]
-                      {:body (ring-io/piped-input-stream (fn [os] (itext/html->pdf html os)))}
-                      {:status 400 :body "Body must contain data"}))]])
-   (ring/create-default-handler)))
+  (-> (ring/ring-handler
+       (ring/router
+        [["/health" (fn [_req] {:status 200})]
+         ["/html2pdf" (fn [req]
+                        (if-let [html (some-> (or (get-in req [:multipart-params "file" :tempfile])
+                                                  (:body req))
+                                              slurp
+                                              not-empty)]
+                          {:body (ring-io/piped-input-stream (fn [os] (itext/html->pdf html os)))}
+                          {:status 400 :body "Body must contain data"}))]])
+       (ring/create-default-handler))
+      wrap-multipart-params))
 
 (defn start
   [{:keys [port] :as _conf}]
